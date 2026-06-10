@@ -1,0 +1,6 @@
+{
+  "name": "CrediFácil",
+  "description": "SaaS para controle de clientes devedores e gestão de fiado em comércios.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
