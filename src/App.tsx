@@ -10,6 +10,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import Dashboard from './components/Dashboard';
 import Settings from './components/Settings';
+import Billing from './components/Billing';
 import Customers from './components/Customers';
 import Debts from './components/Debts';
 import CustomerMetrics from './components/CustomerMetrics';
@@ -38,6 +39,11 @@ export default function App() {
           <Route path="/settings" element={
             <ProtectedRoute>
               <Settings />
+            </ProtectedRoute>
+          } />
+          <Route path="/billing" element={
+            <ProtectedRoute>
+              <Billing />
             </ProtectedRoute>
           } />
           <Route path="/customers" element={
