@@ -1,141 +1,143 @@
 import { useState, useEffect } from 'react';
-import { collection, query, where, onSnapshot, doc, updateDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, doc, updateDoc, DocumentData, limit } from 'firebase/firestore';
 import { db } from './firebase';
 import { useAuth } from '../context/AuthContext';
 import { Customer, Debt, Product } from '../types';
+import { updateCache, readCache } from './utils';
+
+function useCollection<T extends DocumentData>(
+    storeId: string | undefined,
+    collectionName: string,
+    cacheKey: string,
+    idField: string
+) {
+    const [data, setData] = useState<T[]>(() => {
+        return readCache<T[]>(storeId, cacheKey) || [];
+    });
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+
+    useEffect(() => {
+        if (!storeId) return;
+
+        setLoading(true);
+        setError(null);
+
+        const cached = readCache<T[]>(storeId, cacheKey);
+        if (cached) setData(cached);
+
+        const handleCacheUpdate = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            if (customEvent.detail?.key === cacheKey) {
+                setData(customEvent.detail.data);
+            }
+        };
+
+        const handleStorageSync = () => {
+            const cached = readCache<T[]>(storeId, cacheKey);
+            if (cached) setData(cached);
+        };
+
+        window.addEventListener('cache-update', handleCacheUpdate as EventListener);
+        window.addEventListener('storage', handleStorageSync);
+
+        const q = query(
+            collection(db, 'stores', storeId, collectionName),
+            limit(200)
+        );
+        const unsub = onSnapshot(q,
+            (snapshot) => {
+                const mapped = snapshot.docs.map(doc => ({ ...doc.data() as T, [idField]: doc.id }));
+                setData(mapped);
+                setLoading(false);
+                updateCache(storeId, cacheKey, mapped);
+            },
+            (err: Error) => {
+                console.error(`Erro ao carregar ${collectionName}:`, err);
+                setError(err.message || 'Erro de conexão');
+                setLoading(false);
+            }
+        );
+
+        return () => {
+            window.removeEventListener('cache-update', handleCacheUpdate as EventListener);
+            window.removeEventListener('storage', handleStorageSync);
+            unsub();
+        };
+    }, [storeId, collectionName, cacheKey, idField]);
+
+    return { data, loading, error };
+}
 
 export function useStoreData() {
     const { user } = useAuth();
-    const lastActiveUid = localStorage.getItem('auth_last_user_uid');
+    const storeId = user?.uid;
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
 
-    const [customers, setCustomers] = useState<Customer[]>(() => {
-        const uid = user?.uid || lastActiveUid;
-        if (uid) {
-            const cached = localStorage.getItem(`cache_customers_${uid}`);
-            return cached ? JSON.parse(cached) : [];
-        }
-        return [];
-    });
-    const [debts, setDebts] = useState<Debt[]>(() => {
-        const uid = user?.uid || lastActiveUid;
-        if (uid) {
-            const cached = localStorage.getItem(`cache_debts_${uid}`);
-            return cached ? JSON.parse(cached) : [];
-        }
-        return [];
-    });
-    const [products, setProducts] = useState<Product[]>(() => {
-        const uid = user?.uid || lastActiveUid;
-        if (uid) {
-            const cached = localStorage.getItem(`cache_products_${uid}`);
-            return cached ? JSON.parse(cached) : [];
-        }
-        return [];
-    });
+    const customers = useCollection<Customer>(storeId, 'customers', 'customers', 'customerId');
+    const debts = useCollection<Debt>(storeId, 'debts', 'debts', 'debtId');
+    const inventoryCustomers = useCollection<Customer>(storeId, 'inventory_customers', 'inventory_customers', 'customerId');
+    const inventoryDebts = useCollection<Debt>(storeId, 'inventory_debts', 'inventory_debts', 'debtId');
+    const products = useCollection<Product>(storeId, 'products', 'products', 'productId');
+
     const [storeInfo, setStoreInfo] = useState<{ name?: string; ownerName?: string; email?: string; subscriptionStatus?: 'free' | 'pro'; settings?: { defaultCreditLimit?: number; whatsappMessage?: string } }>(() => {
-        const uid = user?.uid || lastActiveUid;
-        if (uid) {
-            const cached = localStorage.getItem(`cache_store_info_${uid}`);
-            return cached ? JSON.parse(cached) : {};
+        const cached = readCache<typeof storeInfo>(storeId, 'store_info');
+        if (cached) {
+            if (isLocal) cached.subscriptionStatus = 'pro';
+            return cached;
         }
         return {};
     });
+    const [storeInfoLoading, setStoreInfoLoading] = useState(true);
+    const [storeInfoError, setStoreInfoError] = useState<string | null>(null);
+
     const [storeSettings, setStoreSettings] = useState<{ defaultCreditLimit?: number; whatsappMessage?: string }>(() => {
-        const uid = user?.uid || lastActiveUid;
-        if (uid) {
-            const cached = localStorage.getItem(`cache_settings_${uid}`);
-            return cached ? JSON.parse(cached) : {};
-        }
-        return {};
+        return readCache<typeof storeSettings>(storeId, 'settings') || {};
     });
 
     useEffect(() => {
-        if (!user) return;
+        if (!storeId) return;
 
-        const storeId = user.uid;
+        setStoreInfoLoading(true);
+        setStoreInfoError(null);
 
-        // Sync initial state from cache
-        const cachedCust = localStorage.getItem(`cache_customers_${storeId}`);
-        if (cachedCust) setCustomers(JSON.parse(cachedCust));
+        const cached = readCache<typeof storeInfo>(storeId, 'store_info');
+        if (cached) {
+            if (isLocal) cached.subscriptionStatus = 'pro';
+            setStoreInfo(cached);
+        }
+        const cachedS = readCache<typeof storeSettings>(storeId, 'settings');
+        if (cachedS) setStoreSettings(cachedS);
 
-        const cachedDebts = localStorage.getItem(`cache_debts_${storeId}`);
-        if (cachedDebts) setDebts(JSON.parse(cachedDebts));
-
-        const cachedProducts = localStorage.getItem(`cache_products_${storeId}`);
-        if (cachedProducts) setProducts(JSON.parse(cachedProducts));
-
-        const cachedSettings = localStorage.getItem(`cache_settings_${storeId}`);
-        if (cachedSettings) setStoreSettings(JSON.parse(cachedSettings));
-
-        const cachedStoreInfo = localStorage.getItem(`cache_store_info_${storeId}`);
-        if (cachedStoreInfo) setStoreInfo(JSON.parse(cachedStoreInfo));
-
-        // Sync changes from localStorage when triggered locally
         const handleStorageSync = () => {
-            const cCust = localStorage.getItem(`cache_customers_${storeId}`);
-            if (cCust) setCustomers(JSON.parse(cCust));
-
-            const cDebts = localStorage.getItem(`cache_debts_${storeId}`);
-            if (cDebts) setDebts(JSON.parse(cDebts));
-
-            const cProducts = localStorage.getItem(`cache_products_${storeId}`);
-            if (cProducts) setProducts(JSON.parse(cProducts));
-
-            const cSettings = localStorage.getItem(`cache_settings_${storeId}`);
-            if (cSettings) setStoreSettings(JSON.parse(cSettings));
-
-            const cStoreInfo = localStorage.getItem(`cache_store_info_${storeId}`);
-            if (cStoreInfo) setStoreInfo(JSON.parse(cStoreInfo));
+            const cInfo = readCache<typeof storeInfo>(storeId, 'store_info');
+            if (cInfo) {
+                if (isLocal) cInfo.subscriptionStatus = 'pro';
+                setStoreInfo(cInfo);
+            }
+            const cSets = readCache<typeof storeSettings>(storeId, 'settings');
+            if (cSets) setStoreSettings(cSets);
         };
 
+        const handleCacheUpdate = (e: Event) => {
+            const customEvent = e as CustomEvent;
+            if (customEvent.detail) {
+                const { key, data } = customEvent.detail;
+                if (key === 'store_info') setStoreInfo(data);
+                if (key === 'settings') setStoreSettings(data);
+            }
+        };
+
+        window.addEventListener('cache-update', handleCacheUpdate as EventListener);
         window.addEventListener('storage', handleStorageSync);
 
-        // Subscriptions
-        const customersQuery = query(collection(db, 'stores', storeId, 'customers'));
-        const debtsQuery = query(collection(db, 'stores', storeId, 'debts'));
-        const productsQuery = query(collection(db, 'stores', storeId, 'products'));
         const storeRef = doc(db, 'stores', storeId);
-
-        const unsubCustomers = onSnapshot(customersQuery, 
-            (snapshot) => {
-                const data = snapshot.docs.map(doc => ({ ...doc.data() as Customer, customerId: doc.id }));
-                setCustomers(data);
-                localStorage.setItem(`cache_customers_${storeId}`, JSON.stringify(data));
-            },
-            (error) => {
-                console.error("Erro ao carregar clientes:", error);
-            }
-        );
-
-        const unsubDebts = onSnapshot(debtsQuery, 
-            (snapshot) => {
-                const data = snapshot.docs.map(doc => ({ ...doc.data() as Debt, debtId: doc.id }));
-                setDebts(data);
-                localStorage.setItem(`cache_debts_${storeId}`, JSON.stringify(data));
-            },
-            (error) => {
-                console.error("Erro ao carregar dívidas:", error);
-            }
-        );
-
-        const unsubProducts = onSnapshot(productsQuery, 
-            (snapshot) => {
-                const data = snapshot.docs.map(doc => ({ ...doc.data() as Product, productId: doc.id }));
-                setProducts(data);
-                localStorage.setItem(`cache_products_${storeId}`, JSON.stringify(data));
-            },
-            (error) => {
-                console.error("Erro ao carregar produtos:", error);
-            }
-        );
-
-        const unsubStore = onSnapshot(storeRef, 
+        const unsubStore = onSnapshot(storeRef,
             (snapshot) => {
                 if (snapshot.exists()) {
                     const data = snapshot.data();
                     const settings = data.settings || {};
-                    
-                    // Auto-backfill email or subscriptionStatus if missing
+
                     if (user && (!data.email || !data.subscriptionStatus)) {
                         updateDoc(storeRef, {
                             email: user.email?.trim().toLowerCase() || '',
@@ -147,28 +149,51 @@ export function useStoreData() {
                         name: data.name || '',
                         ownerName: data.ownerName || '',
                         email: data.email || user?.email || '',
-                        subscriptionStatus: data.subscriptionStatus || 'free',
+                        subscriptionStatus: isLocal ? 'pro' : (data.subscriptionStatus || 'free'),
                         settings: settings
                     };
                     setStoreSettings(settings);
                     setStoreInfo(info);
-                    localStorage.setItem(`cache_settings_${storeId}`, JSON.stringify(settings));
+                    setStoreInfoLoading(false);
+                    updateCache(storeId, 'settings', settings as any);
                     localStorage.setItem(`cache_store_info_${storeId}`, JSON.stringify(info));
+                } else {
+                    setStoreInfoLoading(false);
                 }
             },
-            (error) => {
-                console.error("Erro ao carregar configurações da loja:", error);
+            (err) => {
+                console.error("Erro ao carregar configurações da loja:", err);
+                setStoreInfoError(err.message || 'Erro ao carregar loja');
+                setStoreInfoLoading(false);
             }
         );
 
-        return () => { 
+        return () => {
             window.removeEventListener('storage', handleStorageSync);
-            unsubCustomers(); 
-            unsubDebts(); 
-            unsubProducts();
-            unsubStore(); 
+            window.removeEventListener('cache-update', handleCacheUpdate as EventListener);
+            unsubStore();
         };
-    }, [user]);
+    }, [storeId, user, isLocal]);
 
-    return { customers, debts, products, storeSettings, storeInfo };
+    return {
+        customers: customers.data,
+        customersLoading: customers.loading,
+        customersError: customers.error,
+        debts: debts.data,
+        debtsLoading: debts.loading,
+        debtsError: debts.error,
+        inventoryCustomers: inventoryCustomers.data,
+        inventoryCustomersLoading: inventoryCustomers.loading,
+        inventoryCustomersError: inventoryCustomers.error,
+        inventoryDebts: inventoryDebts.data,
+        inventoryDebtsLoading: inventoryDebts.loading,
+        inventoryDebtsError: inventoryDebts.error,
+        products: products.data,
+        productsLoading: products.loading,
+        productsError: products.error,
+        storeSettings,
+        storeInfo,
+        storeInfoLoading,
+        storeInfoError,
+    };
 }

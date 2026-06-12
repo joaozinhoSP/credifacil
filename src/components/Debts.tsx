@@ -1,11 +1,13 @@
 import React, { useState } from 'react';
 import Layout from './Layout';
 import { useStoreData } from '../lib/hooks';
-import { collection, doc, setDoc, updateDoc } from 'firebase/firestore';
+import { collection, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
-import { DebtStatus } from '../types';
-import { CheckCircle } from 'lucide-react';
+import { Debt, DebtStatus } from '../types';
+import { CheckCircle, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { useToast } from '../lib/Toast';
+import { updateCache } from '../lib/utils';
 
 export default function Debts() {
     const { customers, debts } = useStoreData();
@@ -14,174 +16,269 @@ export default function Debts() {
     const [value, setValue] = useState('');
     const [description, setDescription] = useState('');
     const [dueDate, setDueDate] = useState('');
-    const [status, setStatus] = useState<DebtStatus>('Pendente');
+    const [statusFilter, setStatusFilter] = useState<'all' | 'Pendente' | 'Paga'>('all');
+    const [submitting, setSubmitting] = useState(false);
+    const [editingDebt, setEditingDebt] = useState<Debt | null>(null);
+    const { toast } = useToast();
 
     const handleAddDebt = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !customerId || !value) return;
+        if (!user || !customerId || !value || submitting) return;
 
+        const numValue = parseFloat(value);
+        if (isNaN(numValue) || numValue <= 0) {
+            toast('O valor da dívida deve ser maior que zero.', 'error');
+            return;
+        }
+
+        setSubmitting(true);
         try {
-            const debtRef = doc(collection(db, 'stores', user.uid, 'debts'));
-            await setDoc(debtRef, {
-                debtId: debtRef.id,
-                customerId,
-                customerName: customers.find(c => c.customerId === customerId)?.name || 'Desconhecido',
-                storeId: user.uid,
-                value: parseFloat(value),
-                description,
-                dueDate,
-                status,
-                createdAt: new Date().toISOString()
-            });
-            alert('Dívida adicionada com sucesso!');
+            if (editingDebt) {
+                const updated = debts.map(d =>
+                    d.debtId === editingDebt.debtId
+                        ? { ...d, customerId, value: numValue, description, dueDate }
+                        : d
+                );
+                updateCache(user.uid, 'debts', updated as any);
+                const debtRef = doc(db, 'stores', user.uid, 'debts', editingDebt.debtId);
+                await updateDoc(debtRef, {
+                    customerId,
+                    customerName: customers.find(c => c.customerId === customerId)?.name || 'Desconhecido',
+                    value: numValue,
+                    description,
+                    dueDate,
+                });
+                toast('Dívida atualizada com sucesso!', 'success');
+                setEditingDebt(null);
+            } else {
+                const debtRef = doc(collection(db, 'stores', user.uid, 'debts'));
+                const newDebt = {
+                    debtId: debtRef.id,
+                    customerId,
+                    customerName: customers.find(c => c.customerId === customerId)?.name || 'Desconhecido',
+                    storeId: user.uid,
+                    value: numValue,
+                    description,
+                    dueDate,
+                    status: 'Pendente' as const,
+                    createdAt: new Date().toISOString()
+                };
+
+                const updated = [...debts, newDebt];
+                updateCache(user.uid, 'debts', updated as any);
+                await setDoc(debtRef, newDebt);
+                toast('Dívida registrada com sucesso!', 'success');
+            }
             setCustomerId('');
             setValue('');
             setDescription('');
             setDueDate('');
         } catch (error) {
             console.error('Erro ao adicionar dívida:', error);
-            alert('Erro ao adicionar dívida.');
+            toast('Erro ao salvar no servidor.', 'error');
+        } finally {
+            setSubmitting(false);
+        }
+    };
+
+    const handleStartEdit = (debt: Debt) => {
+        setEditingDebt(debt);
+        setCustomerId(debt.customerId);
+        setValue(debt.value.toString());
+        setDescription(debt.description || '');
+        setDueDate(debt.dueDate);
+    };
+
+    const handleCancelEdit = () => {
+        setEditingDebt(null);
+        setCustomerId('');
+        setValue('');
+        setDescription('');
+        setDueDate('');
+    };
+
+    const handleDeleteDebt = async (debtId: string) => {
+        if (!user) return;
+        if (!window.confirm('Tem certeza que deseja excluir esta dívida?')) return;
+        try {
+            const updated = debts.filter(d => d.debtId !== debtId);
+            updateCache(user.uid, 'debts', updated as any);
+            await deleteDoc(doc(db, 'stores', user.uid, 'debts', debtId));
+            toast('Dívida excluída!', 'success');
+        } catch (error) {
+            console.error('Erro ao excluir dívida:', error);
+            toast('Erro ao excluir.', 'error');
         }
     };
 
     const handleMarkAsPaid = async (debtId: string) => {
         if (!user) return;
+        const updated = debts.map(d => d.debtId === debtId ? { ...d, status: 'Paga' as const } : d);
+        updateCache(user.uid, 'debts', updated as any);
         try {
             const debtRef = doc(db, 'stores', user.uid, 'debts', debtId);
             await updateDoc(debtRef, { status: 'Paga' });
-            alert('Dívida marcada como paga!');
+            toast('Dívida marcada como paga!', 'success');
         } catch (error) {
             console.error('Erro ao atualizar status da dívida:', error);
-            alert('Erro ao atualizar status.');
+            toast('Erro ao atualizar.', 'error');
         }
     };
 
+    const filteredDebts = statusFilter === 'all'
+        ? debts
+        : debts.filter(d => d.status === statusFilter);
+
     return (
         <Layout>
-            <h1 className="text-2xl font-bold mb-6 text-gray-800 font-sans">Nova Dívida</h1>
-            <form onSubmit={handleAddDebt} className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 max-w-lg font-sans mb-8">
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                    <select
-                        value={customerId}
-                        onChange={(e) => setCustomerId(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        required
-                    >
-                        <option value="">Selecione um cliente</option>
-                        {customers.map(c => (
-                            <option key={c.customerId} value={c.customerId}>{c.name}</option>
-                        ))}
-                    </select>
-                </div>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Valor (R$)</label>
-                    <input
-                        type="number"
-                        step="0.01"
-                        value={value}
-                        onChange={(e) => setValue(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder="0.00"
-                        required
-                    />
-                </div>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descrição</label>
-                    <input
-                        type="text"
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        placeholder="Ex: Compra de mercearia"
-                    />
-                </div>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Data de Vencimento</label>
-                    <input
-                        type="date"
-                        value={dueDate}
-                        onChange={(e) => setDueDate(e.target.value)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                        required
-                    />
-                </div>
-                <div className="mb-4">
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Status</label>
-                    <select
-                        value={status}
-                        onChange={(e) => setStatus(e.target.value as DebtStatus)}
-                        className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                    >
-                        <option value="Pendente">Pendente</option>
-                        <option value="Paga">Paga</option>
-                    </select>
-                </div>
-                <button
-                    type="submit"
-                    className="w-full bg-emerald-600 text-white py-2 rounded-md hover:bg-emerald-700 font-medium cursor-pointer"
-                >
-                    Registrar Dívida
-                </button>
-            </form>
+            <div className="max-w-5xl mx-auto font-sans text-slate-800">
+                <h1 className="text-3xl font-black mb-6 text-slate-900 tracking-tight flex items-center gap-2">
+                    <CheckCircle className="w-8 h-8 text-emerald-600" /> Registrar Dívida
+                </h1>
 
-            <div className="mt-8 bg-white p-6 rounded-xl shadow-sm border border-gray-100 font-sans">
-                <h2 className="text-xl font-bold mb-4 text-gray-800">Dívidas Cadastradas</h2>
-                <div className="overflow-x-auto">
-                    <table className="w-full text-left">
-                        <thead>
-                            <tr className="text-gray-400 text-sm border-b border-gray-100">
-                                <th className="pb-3 px-2">Cliente</th>
-                                <th className="pb-3 px-2">Valor</th>
-                                <th className="pb-3 px-2">Vencimento</th>
-                                <th className="pb-3 px-2">Status</th>
-                                <th className="pb-3 px-2 text-right">Ação</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {debts.length === 0 ? (
-                                <tr>
-                                    <td colSpan={5} className="py-6 text-center text-gray-500">Nenhuma dívida registrada.</td>
-                                </tr>
-                            ) : (
-                                debts.map(debt => {
-                                    const customer = customers.find(c => c.customerId === debt.customerId);
-                                    return (
-                                        <tr key={debt.debtId} className="border-t border-gray-100 hover:bg-gray-50 transition-colors">
-                                            <td className="py-3 px-2 text-gray-800 font-medium truncate max-w-[150px]">
-                                                {debt.customerName || customer?.name || 'Desconhecido'}
-                                                {debt.lastChargedAt && (
-                                                    <span className="block text-[10px] text-blue-500 font-semibold mt-0.5">
-                                                        Cobrado em {new Date(debt.lastChargedAt).toLocaleDateString('pt-BR')}
-                                                    </span>
-                                                )}
-                                            </td>
-                                            <td className={`py-3 px-2 font-bold ${debt.status === 'Paga' ? 'text-emerald-600' : 'text-red-600'}`}>R$ {debt.value.toFixed(2)}</td>
-                                            <td className="py-3 px-2 text-gray-600">{debt.dueDate}</td>
-                                            <td className="py-3 px-2">
-                                                <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
-                                                    debt.status === 'Paga' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
-                                                }`}>
-                                                    {debt.status}
-                                                </span>
-                                            </td>
-                                            <td className="py-3 px-2 text-right">
-                                                {debt.status !== 'Paga' && (
-                                                    <button 
-                                                      onClick={() => handleMarkAsPaid(debt.debtId)} 
-                                                      className="bg-emerald-100 text-emerald-700 p-1 rounded-full hover:bg-emerald-200 transition-colors inline-flex items-center justify-center cursor-pointer"
-                                                      title="Marcar como Pago"
-                                                    >
-                                                      <CheckCircle className="w-4 h-4" />
-                                                    </button>
-                                                )}
-                                            </td>
-                                        </tr>
-                                    );
-                                })
+                <form onSubmit={handleAddDebt} className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60 mb-8 max-w-2xl">
+                    <h2 className="text-lg font-bold mb-4 text-slate-900">{editingDebt ? 'Editar Dívida' : 'Nova Dívida'}</h2>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Cliente</label>
+                            <select
+                                value={customerId}
+                                onChange={(e) => setCustomerId(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm h-10"
+                                required
+                            >
+                                <option value="">Selecione um cliente</option>
+                                {customers.map(c => (
+                                    <option key={c.customerId} value={c.customerId}>{c.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Valor (R$)</label>
+                            <input
+                                type="number" step="0.01" value={value}
+                                onChange={(e) => setValue(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm h-10"
+                                placeholder="0.00" required
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Descrição</label>
+                            <input type="text" value={description}
+                                onChange={(e) => setDescription(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm h-10"
+                                placeholder="Ex: Compra de mercearia"
+                            />
+                        </div>
+                        <div className="space-y-1">
+                            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wide">Vencimento</label>
+                            <input type="date" value={dueDate}
+                                onChange={(e) => setDueDate(e.target.value)}
+                                className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 text-sm h-10"
+                                required
+                            />
+                        </div>
+                        <div className="sm:col-span-2 flex items-end gap-2">
+                            <button type="submit"
+                                disabled={submitting}
+                                className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white py-2 rounded-xl font-bold transition cursor-pointer h-10 text-sm shadow-sm shadow-emerald-600/10 flex items-center justify-center gap-1.5 disabled:opacity-50"
+                            >
+                                <Plus className="w-4 h-4" /> {submitting ? 'Salvando...' : (editingDebt ? 'Salvar' : 'Registrar Dívida')}
+                            </button>
+                            {editingDebt && (
+                                <button type="button" onClick={handleCancelEdit}
+                                    className="bg-slate-100 hover:bg-slate-200 text-slate-600 px-4 rounded-xl font-bold transition cursor-pointer h-10 text-sm flex items-center gap-1 border border-slate-200">
+                                    <X className="w-4 h-4" /> Cancelar
+                                </button>
                             )}
-                        </tbody>
-                    </table>
+                        </div>
+                    </div>
+                </form>
+
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200/60">
+                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 mb-4">
+                        <h2 className="text-lg font-bold text-slate-900">Dívidas Cadastradas</h2>
+                        <select value={statusFilter} onChange={e => setStatusFilter(e.target.value as any)}
+                            className="px-2 py-1.5 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500">
+                            <option value="all">Todas</option>
+                            <option value="Pendente">Pendentes</option>
+                            <option value="Paga">Pagas</option>
+                        </select>
+                    </div>
+                    <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                            <thead>
+                                <tr className="text-slate-400 text-xs border-b border-slate-100">
+                                    <th className="pb-3 px-2 font-bold">Cliente</th>
+                                    <th className="pb-3 px-2 font-bold">Valor</th>
+                                    <th className="pb-3 px-2 font-bold">Vencimento</th>
+                                    <th className="pb-3 px-2 font-bold">Status</th>
+                                    <th className="pb-3 px-2 text-right font-bold">Ações</th>
+                                </tr>
+                            </thead>
+                            <tbody className="text-xs">
+                                {filteredDebts.length === 0 ? (
+                                    <tr>
+                                        <td colSpan={5} className="py-6 text-center text-slate-400 font-medium">Nenhuma dívida encontrada.</td>
+                                    </tr>
+                                ) : (
+                                    filteredDebts.map(debt => {
+                                        const customer = customers.find(c => c.customerId === debt.customerId);
+                                        return (
+                                            <tr key={debt.debtId} className="border-t border-slate-150 hover:bg-slate-50/50 transition-colors">
+                                                <td className="py-3 px-2 text-slate-800 font-bold truncate max-w-[150px]">
+                                                    {debt.customerName || customer?.name || 'Desconhecido'}
+                                                    {debt.lastChargedAt && (
+                                                        <span className="block text-[9px] text-blue-500 font-semibold mt-0.5">
+                                                            Cobrado em {new Date(debt.lastChargedAt).toLocaleDateString('pt-BR')}
+                                                        </span>
+                                                    )}
+                                                </td>
+                                                <td className={`py-3 px-2 font-bold ${debt.status === 'Paga' ? 'text-emerald-600' : 'text-red-600'}`}>
+                                                    R$ {debt.value.toFixed(2)}
+                                                </td>
+                                                <td className="py-3 px-2 text-slate-600">{debt.dueDate}</td>
+                                                <td className="py-3 px-2">
+                                                    <span className={`px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                                                        debt.status === 'Paga' ? 'bg-emerald-100 text-emerald-800' : 'bg-red-100 text-red-800'
+                                                    }`}>
+                                                        {debt.status}
+                                                    </span>
+                                                </td>
+                                                <td className="py-3 px-2 text-right">
+                                                    <div className="flex gap-1.5 justify-end">
+                                                        {debt.status !== 'Paga' && (
+                                                            <button
+                                                                onClick={() => handleMarkAsPaid(debt.debtId)}
+                                                                className="bg-emerald-100 text-emerald-700 p-1.5 rounded-full hover:bg-emerald-200 transition-colors inline-flex items-center justify-center cursor-pointer"
+                                                                title="Marcar como Pago"
+                                                            >
+                                                                <CheckCircle className="w-4 h-4" />
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleStartEdit(debt)}
+                                                            className="bg-amber-50 text-amber-600 p-1.5 rounded-full hover:bg-amber-100 transition-colors inline-flex items-center justify-center cursor-pointer"
+                                                            title="Editar"
+                                                        >
+                                                            <Pencil className="w-4 h-4" />
+                                                        </button>
+                                                        <button
+                                                            onClick={() => handleDeleteDebt(debt.debtId)}
+                                                            className="bg-red-50 text-red-600 p-1.5 rounded-full hover:bg-red-100 transition-colors inline-flex items-center justify-center cursor-pointer"
+                                                            title="Excluir"
+                                                        >
+                                                            <Trash2 className="w-4 h-4" />
+                                                        </button>
+                                                    </div>
+                                                </td>
+                                            </tr>
+                                        );
+                                    })
+                                )}
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
             </div>
         </Layout>

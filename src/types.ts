@@ -33,6 +33,7 @@ export type Debt = {
     dueDate: string;
     status: DebtStatus;
     lastChargedAt?: string;
+    createdAt?: string;
 };
 
 export type Payment = {

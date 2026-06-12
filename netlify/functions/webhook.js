@@ -26,10 +26,30 @@ function getDb() {
     return db;
 }
 
+// Validate required environment variables on cold start
+const REQUIRED_ENV = ['FIREBASE_API_KEY', 'FIREBASE_AUTH_DOMAIN', 'FIREBASE_PROJECT_ID'];
+for (const key of REQUIRED_ENV) {
+    if (!process.env[key]) {
+        console.error(`Variável de ambiente ausente: ${key}`);
+    }
+}
+
 exports.handler = async (event) => {
     // Only accept POST
     if (event.httpMethod !== 'POST') {
         return { statusCode: 405, body: JSON.stringify({ error: 'Method Not Allowed' }) };
+    }
+
+    // Verify webhook secret (set WEBHOOK_SECRET in Netlify Dashboard)
+    const secret = process.env.WEBHOOK_SECRET;
+    if (secret) {
+        const headerSecret = event.headers['x-webhook-secret'] || event.headers['X-Webhook-Secret'] || '';
+        if (headerSecret !== secret) {
+            console.error('Webhook rejeitado: assinatura inválida.');
+            return { statusCode: 401, body: JSON.stringify({ error: 'Assinatura inválida.' }) };
+        }
+    } else {
+        console.warn('WEBHOOK_SECRET não configurado. Webhook sem proteção!');
     }
 
     console.log('--- Webhook Recebido da FortPay ---');
@@ -94,8 +114,13 @@ exports.handler = async (event) => {
             };
         }
 
-        // Upgrade all matching stores to PRO
+        // Upgrade all matching stores to PRO (idempotent — skip if already PRO)
         for (const docSnap of querySnapshot.docs) {
+            const data = docSnap.data();
+            if (data.subscriptionStatus === 'pro') {
+                console.log(`Loja [ID: ${docSnap.id}] já é PRO. Pulando.`);
+                continue;
+            }
             const storeDocRef = doc(database, 'stores', docSnap.id);
             await updateDoc(storeDocRef, { subscriptionStatus: 'pro' });
             console.log(`Loja [ID: ${docSnap.id}] atualizada para plano PRO!`);

@@ -6,6 +6,8 @@ import Layout from './Layout';
 import { useStoreData } from '../lib/hooks';
 import { MessageSquare, Send, Sparkles, AlertCircle, RefreshCw } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
+import { useToast } from '../lib/Toast';
+import { aggregateDebtsByCustomer, lastChargedByCustomer, getMessagePreview, updateCache, formatDate } from '../lib/utils';
 
 export default function Billing() {
     const { user } = useAuth();
@@ -14,6 +16,7 @@ export default function Billing() {
     const [saving, setSaving] = useState(false);
     const [isInitialized, setIsInitialized] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
+    const { toast } = useToast();
 
     const isPro = storeInfo?.subscriptionStatus === 'pro';
 
@@ -26,41 +29,20 @@ export default function Billing() {
         }
     }, [storeInfo, isInitialized]);
 
-    // Calculate outstanding debts per customer
     const pendingDebts = debts.filter(d => d.status !== 'Paga');
-    
-    const debtsByCustomer = pendingDebts.reduce((acc, d) => {
-        acc[d.customerId] = (acc[d.customerId] || 0) + Number(d.value);
-        return acc;
-    }, {} as Record<string, number>);
-
-    // Get the latest date a customer was charged
-    const lastChargedByCustomer = pendingDebts.reduce((acc, d) => {
-        if (d.lastChargedAt) {
-            const date = new Date(d.lastChargedAt);
-            if (!acc[d.customerId] || date > new Date(acc[d.customerId])) {
-                acc[d.customerId] = d.lastChargedAt;
-            }
-        }
-        return acc;
-    }, {} as Record<string, string>);
+    const debtsByCustomer = aggregateDebtsByCustomer(pendingDebts);
+    const lastChargedByCustomerMap = lastChargedByCustomer(pendingDebts);
 
     // Filter customers who owe money
     const owingCustomers = customers.filter(c => (debtsByCustomer[c.customerId] || 0) > 0);
 
-    const getMessagePreview = (customerName: string, value: number) => {
-        let template = whatsappMessage || "Olá {cliente}! Lembrete de sua dívida no valor de R$ {valor}.";
-        if (!isPro) {
-            template = "Olá {cliente}! Lembrete de sua dívida no valor de R$ {valor}.";
-        }
-        return template.replace(/{cliente}/g, customerName).replace(/{valor}/g, value.toFixed(2));
-    };
+    const previewMessage = (customerName: string, value: number) =>
+        getMessagePreview(customerName, value, whatsappMessage, isPro);
 
     const handleSendCharge = async (customerId: string, phone: string, name: string, value: number) => {
         if (!user) return;
 
-        // Open WhatsApp link in a new tab
-        const finalMsg = getMessagePreview(name, value);
+        const finalMsg = previewMessage(name, value);
         const formattedPhone = phone.replace(/\D/g, '');
         const whatsappUrl = `https://wa.me/${formattedPhone}?text=${encodeURIComponent(finalMsg)}`;
         window.open(whatsappUrl, '_blank');
@@ -92,10 +74,9 @@ export default function Billing() {
             settings: localSettings
         };
 
-        // Save locally for responsive UI
+        updateCache(user.uid, 'settings', localSettings as any);
         localStorage.setItem(`cache_store_info_${user.uid}`, JSON.stringify(localStoreInfo));
-        localStorage.setItem(`cache_settings_${user.uid}`, JSON.stringify(localSettings));
-        window.dispatchEvent(new Event('storage'));
+        window.dispatchEvent(new CustomEvent('cache-update', { detail: { key: 'store_info', data: localStoreInfo } }));
 
         try {
             const storeRef = doc(db, 'stores', user.uid);
@@ -105,23 +86,13 @@ export default function Billing() {
                 }
             }, { merge: true });
 
-            alert('Modelo de mensagem salvo com sucesso!');
+            toast('Modelo de mensagem salvo com sucesso!', 'success');
         } catch (error) {
             console.error('Erro ao salvar modelo:', error);
-            alert('Salvo no navegador! (Sincronização pendente com servidor)');
+            toast('Salvo no navegador! (Sincronização pendente com servidor)', 'error');
         } finally {
             setSaving(false);
         }
-    };
-
-    const formatDate = (isoString: string) => {
-        const date = new Date(isoString);
-        return date.toLocaleDateString('pt-BR', {
-            day: '2-digit',
-            month: '2-digit',
-            hour: '2-digit',
-            minute: '2-digit'
-        });
     };
 
     return (
@@ -193,8 +164,8 @@ export default function Billing() {
                             <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
                                 {owingCustomers.map(c => {
                                     const totalDebt = debtsByCustomer[c.customerId] || 0;
-                                    const lastCharged = lastChargedByCustomer[c.customerId];
-                                    const msgPreview = getMessagePreview(c.name, totalDebt);
+                                    const lastCharged = lastChargedByCustomerMap[c.customerId];
+                                    const msgPreview = previewMessage(c.name, totalDebt);
 
                                     return (
                                         <div key={c.customerId} className="bg-slate-50 p-4 rounded-xl border border-slate-200/50 flex flex-col md:flex-row md:items-center justify-between gap-4 text-xs">

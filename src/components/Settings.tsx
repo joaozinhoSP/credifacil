@@ -7,6 +7,8 @@ import { db, auth } from '../lib/firebase';
 import { updatePassword, sendPasswordResetEmail } from 'firebase/auth';
 import UpgradeModal from './UpgradeModal';
 import { Settings as SettingsIcon, Shield, Key, Sparkles, AlertTriangle, HelpCircle, HardDrive, RefreshCw } from 'lucide-react';
+import { useToast } from '../lib/Toast';
+import { updateCache } from '../lib/utils';
 
 export default function Settings() {
     const { user } = useAuth();
@@ -25,6 +27,7 @@ export default function Settings() {
 
     // Reset State
     const [resetLoading, setResetLoading] = useState(false);
+    const { toast } = useToast();
 
     const isPro = storeInfo?.subscriptionStatus === 'pro';
 
@@ -54,10 +57,8 @@ export default function Settings() {
             settings: localSettings
         };
         
-        // Save locally
+        updateCache(user.uid, 'settings', localSettings as any);
         localStorage.setItem(`cache_store_info_${user.uid}`, JSON.stringify(localStoreInfo));
-        localStorage.setItem(`cache_settings_${user.uid}`, JSON.stringify(localSettings));
-        window.dispatchEvent(new Event('storage'));
 
         try {
             const storeRef = doc(db, 'stores', user.uid);
@@ -69,10 +70,10 @@ export default function Settings() {
                 }
             }, { merge: true });
 
-            alert('Informações atualizadas com sucesso!');
+            toast('Informações atualizadas com sucesso!', 'success');
         } catch (error) {
             console.error('Erro ao salvar:', error);
-            alert('Salvo localmente! (Sincronização pendente)');
+            toast('Salvo localmente! (Sincronização pendente)', 'error');
         } finally {
             setSaving(false);
         }
@@ -131,14 +132,14 @@ export default function Settings() {
 
         const confirm2 = window.prompt('Para confirmar, digite o nome da sua loja (' + shopName + '):');
         if (confirm2 !== shopName) {
-            alert('Nome da loja incorreto. Cancelado.');
+            toast('Nome da loja incorreto. Cancelado.', 'error');
             return;
         }
 
         setResetLoading(true);
         try {
             // Delete subcollections: customers, debts, products
-            const collectionsToDelete = ['customers', 'debts', 'products'];
+            const collectionsToDelete = ['customers', 'debts', 'products', 'inventory_customers', 'inventory_debts'];
             for (const colName of collectionsToDelete) {
                 const colRef = collection(db, 'stores', user.uid, colName);
                 const snapshot = await getDocs(colRef);
@@ -150,13 +151,15 @@ export default function Settings() {
             // Clear cache
             localStorage.removeItem(`cache_customers_${user.uid}`);
             localStorage.removeItem(`cache_debts_${user.uid}`);
+            localStorage.removeItem(`cache_inventory_customers_${user.uid}`);
+            localStorage.removeItem(`cache_inventory_debts_${user.uid}`);
             localStorage.removeItem(`cache_products_${user.uid}`);
             window.dispatchEvent(new Event('storage'));
 
-            alert('Dados da conta limpos com sucesso! O sistema foi redefinido.');
+            toast('Dados da conta limpos com sucesso! O sistema foi redefinido.', 'success');
         } catch (error) {
             console.error('Erro ao resetar dados:', error);
-            alert('Ocorreu um erro ao limpar os dados.');
+            toast('Ocorreu um erro ao limpar os dados.', 'error');
         } finally {
             setResetLoading(false);
         }

@@ -2,7 +2,8 @@ import {
     createUserWithEmailAndPassword as firebaseCreateUser, 
     signInWithEmailAndPassword, 
     signInWithPopup, 
-    GoogleAuthProvider 
+    GoogleAuthProvider,
+    sendEmailVerification
 } from 'firebase/auth';
 import { doc, setDoc, getDoc } from 'firebase/firestore';
 import { auth, db } from './firebase';
@@ -11,6 +12,9 @@ export async function registerUser(email: string, password: string, name: string
     try {
         const userCredential = await firebaseCreateUser(auth, email, password);
         const user = userCredential.user;
+        
+        // Send verification email
+        await sendEmailVerification(user);
         
         // Create store entry in Firestore
         await setDoc(doc(db, 'stores', user.uid), {
@@ -27,6 +31,12 @@ export async function registerUser(email: string, password: string, name: string
     } catch (error) {
         console.error('Erro detalhado no registro:', error);
         throw error;
+    }
+}
+
+export async function resendVerificationEmail() {
+    if (auth.currentUser && !auth.currentUser.emailVerified) {
+        await sendEmailVerification(auth.currentUser);
     }
 }
 

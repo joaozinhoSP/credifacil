@@ -1,0 +1,21 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Each store document is owned by the user whose UID matches the document ID
+    match /stores/{storeId} {
+      // Allow read/write only if the requester owns this store
+      allow read, write: if request.auth != null && request.auth.uid == storeId;
+
+      // All subcollections (customers, debts, products, inventory_customers, inventory_debts)
+      // inherit the parent match — but we explicitly require ownership
+      match /{document=**} {
+        allow read, write: if request.auth != null && request.auth.uid == storeId;
+      }
+    }
+
+    // Deny everything else
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
