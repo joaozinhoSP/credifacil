@@ -1,6 +1,6 @@
 {
-  "name": "CrediFácil",
-  "description": "SaaS para controle de clientes devedores e gestão de fiado em comércios.",
+  "name": "GestãoPro",
+  "description": "SaaS para gestão de fiado, otimização de rotas e controle de estoque para pequenos comércios.",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

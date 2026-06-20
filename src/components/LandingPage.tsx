@@ -70,7 +70,7 @@ export default function LandingPage() {
             >
                 <div className="flex justify-between items-center py-4 px-6 md:px-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-2">
-                        <img src="/logo.png" alt="CrediFácil" className="h-12 w-auto" />
+                        <img src="/logo.png" alt="GestãoPro" className="h-12 w-auto" />
                     </div>
 
                     <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">
@@ -197,7 +197,7 @@ export default function LandingPage() {
                         <span className="w-3.5 h-3.5 rounded-full bg-red-400" />
                         <span className="w-3.5 h-3.5 rounded-full bg-amber-400" />
                         <span className="w-3.5 h-3.5 rounded-full bg-emerald-400" />
-                        <span className="text-xs text-slate-400 font-semibold ml-2">Painel Demonstrativo CrediFácil</span>
+                        <span className="text-xs text-slate-400 font-semibold ml-2">Painel Demonstrativo GestãoPro</span>
                     </div>
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
@@ -291,7 +291,7 @@ export default function LandingPage() {
                 <div className="max-w-7xl mx-auto">
                     <FadeIn>
                         <div className="text-center mb-16">
-                            <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-4 tracking-tight">Como o CrediFácil funciona</h2>
+                            <h2 className="text-3xl md:text-5xl font-extrabold text-slate-900 mb-4 tracking-tight">Como o GestãoPro funciona</h2>
                             <p className="text-lg text-slate-600 max-w-2xl mx-auto">Tudo projetado de maneira intuitiva para se adaptar ao seu comércio, seja você um mercadinho, confecção, bar ou autônomo.</p>
                         </div>
                     </FadeIn>
@@ -483,7 +483,7 @@ export default function LandingPage() {
             {/* Footer */}
             <footer className="py-12 px-6 md:px-8 text-center text-slate-500 border-t border-slate-200 bg-white">
                 <div className="max-w-7xl mx-auto flex flex-col md:flex-row justify-between items-center gap-4 text-xs font-medium">
-                    <p>&copy; 2026 CrediFácil. Todos os direitos reservados.</p>
+                    <p>&copy; 2026 GestãoPro. Todos os direitos reservados.</p>
                     <div className="flex gap-6">
                         <span className="hover:text-slate-800 transition cursor-pointer">Termos de Uso</span>
                         <span className="hover:text-slate-800 transition cursor-pointer">Privacidade</span>

@@ -7,27 +7,22 @@ import { useStoreData } from '../lib/hooks';
 import { MessageSquare, Send, Sparkles, AlertCircle, RefreshCw } from 'lucide-react';
 import UpgradeModal from './UpgradeModal';
 import { useToast } from '../lib/Toast';
-import { aggregateDebtsByCustomer, lastChargedByCustomer, getMessagePreview, updateCache, formatDate } from '../lib/utils';
+import { aggregateDebtsByCustomer, lastChargedByCustomer, getMessagePreview, formatDate } from '../lib/utils';
 
 export default function Billing() {
     const { user } = useAuth();
     const { customers, debts, storeSettings, storeInfo } = useStoreData();
     const [whatsappMessage, setWhatsappMessage] = useState('');
     const [saving, setSaving] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
     const { toast } = useToast();
 
     const isPro = storeInfo?.subscriptionStatus === 'pro';
 
-    // Populate local template state once store settings load
     useEffect(() => {
-        if (storeInfo && Object.keys(storeInfo).length > 0 && !isInitialized) {
-            const settings = storeInfo.settings || {};
-            setWhatsappMessage(settings.whatsappMessage || '');
-            setIsInitialized(true);
-        }
-    }, [storeInfo, isInitialized]);
+        const msg = storeInfo?.settings?.whatsappMessage;
+        if (msg) setWhatsappMessage(msg);
+    }, [storeInfo?.settings?.whatsappMessage]);
 
     const pendingDebts = debts.filter(d => d.status !== 'Paga');
     const debtsByCustomer = aggregateDebtsByCustomer(pendingDebts);
@@ -65,19 +60,6 @@ export default function Billing() {
         if (!user) return;
         setSaving(true);
 
-        const localSettings = {
-            ...storeSettings,
-            whatsappMessage: whatsappMessage
-        };
-        const localStoreInfo = {
-            ...storeInfo,
-            settings: localSettings
-        };
-
-        updateCache(user.uid, 'settings', localSettings as any);
-        localStorage.setItem(`cache_store_info_${user.uid}`, JSON.stringify(localStoreInfo));
-        window.dispatchEvent(new CustomEvent('cache-update', { detail: { key: 'store_info', data: localStoreInfo } }));
-
         try {
             const storeRef = doc(db, 'stores', user.uid);
             await setDoc(storeRef, {
@@ -89,7 +71,7 @@ export default function Billing() {
             toast('Modelo de mensagem salvo com sucesso!', 'success');
         } catch (error) {
             console.error('Erro ao salvar modelo:', error);
-            toast('Salvo no navegador! (Sincronização pendente com servidor)', 'error');
+            toast('Erro ao salvar no servidor. Tente novamente.', 'error');
         } finally {
             setSaving(false);
         }

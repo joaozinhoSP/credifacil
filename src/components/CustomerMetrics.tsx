@@ -6,7 +6,7 @@ import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../lib/firebase';
 import { BarChart2, CheckCircle, MessageSquare } from 'lucide-react';
 import { useToast } from '../lib/Toast';
-import { getWhatsappLink, updateCache } from '../lib/utils';
+import { getWhatsappLink } from '../lib/utils';
 
 export default function CustomerMetrics() {
     const { id } = useParams<{ id: string }>();
@@ -21,8 +21,6 @@ export default function CustomerMetrics() {
 
     const handleMarkAsPaid = async (debtId: string) => {
         if (!user) return;
-        const updated = debts.map(d => d.debtId === debtId ? { ...d, status: 'Paga' as const } : d);
-        updateCache(user.uid, 'debts', updated as any);
         try {
             await updateDoc(doc(db, 'stores', user.uid, 'debts', debtId), { status: 'Paga' });
             toast('Dívida marcada como paga!', 'success');

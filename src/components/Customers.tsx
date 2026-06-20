@@ -9,7 +9,7 @@ import { Pencil, Trash2, BarChart2, X, MessageSquare, Plus, Users } from 'lucide
 import { Customer } from '../types';
 import UpgradeModal from './UpgradeModal';
 import { useToast } from '../lib/Toast';
-import { getWhatsappLink, aggregateDebtsByCustomer, updateCache } from '../lib/utils';
+import { getWhatsappLink, aggregateDebtsByCustomer } from '../lib/utils';
 
 export default function Customers() {
     const { user } = useAuth();
@@ -29,12 +29,6 @@ export default function Customers() {
         const customerDebts = pendingDebts.filter(d => d.customerId === customerId);
         
         const nowStr = new Date().toISOString();
-        const updatedDebts = debts.map(d => 
-            d.customerId === customerId && d.status !== 'Paga' 
-                ? { ...d, lastChargedAt: nowStr } 
-                : d
-        );
-        updateCache(user.uid, 'debts', updatedDebts);
 
         for (const debt of customerDebts) {
             try {
@@ -59,14 +53,6 @@ export default function Customers() {
         setSubmitting(true);
         try {
             if (editingCustomer) {
-                const updatedCustomer = {
-                    ...editingCustomer,
-                    name,
-                    phone
-                };
-                const optimList = customers.map(c => c.customerId === editingCustomer.customerId ? updatedCustomer : c);
-                updateCache(user.uid, 'customers', optimList);
-
                 const customerRef = doc(db, 'stores', user.uid, 'customers', editingCustomer.customerId);
                 await updateDoc(customerRef, { name, phone });
                 toast('Cliente atualizado com sucesso!', 'success');
@@ -81,10 +67,6 @@ export default function Customers() {
                     status: 'Ativo' as const,
                     createdAt: new Date().toISOString()
                 };
-
-                const optimList = [...customers, newCustomer];
-                updateCache(user.uid, 'customers', optimList);
-
                 await setDoc(customerRef, newCustomer);
                 toast('Cliente adicionado com sucesso!', 'success');
             }
@@ -114,8 +96,6 @@ export default function Customers() {
         if (!user) return;
         if (window.confirm('Tem certeza que deseja excluir este cliente?')) {
             try {
-                const optimList = customers.filter(c => c.customerId !== customerId);
-                updateCache(user.uid, 'customers', optimList);
                 const customerRef = doc(db, 'stores', user.uid, 'customers', customerId);
                 await deleteDoc(customerRef);
                 toast('Cliente excluído com sucesso!', 'success');

@@ -5,9 +5,8 @@ import { collection, doc, setDoc, updateDoc, deleteDoc } from 'firebase/firestor
 import { db } from '../lib/firebase';
 import { useAuth } from '../context/AuthContext';
 import { Debt, DebtStatus } from '../types';
-import { CheckCircle, Plus, Pencil, Trash2, X } from 'lucide-react';
+import { CheckCircle, Plus, Pencil, Trash2, X, Undo2 } from 'lucide-react';
 import { useToast } from '../lib/Toast';
-import { updateCache } from '../lib/utils';
 
 export default function Debts() {
     const { customers, debts } = useStoreData();
@@ -34,12 +33,6 @@ export default function Debts() {
         setSubmitting(true);
         try {
             if (editingDebt) {
-                const updated = debts.map(d =>
-                    d.debtId === editingDebt.debtId
-                        ? { ...d, customerId, value: numValue, description, dueDate }
-                        : d
-                );
-                updateCache(user.uid, 'debts', updated as any);
                 const debtRef = doc(db, 'stores', user.uid, 'debts', editingDebt.debtId);
                 await updateDoc(debtRef, {
                     customerId,
@@ -63,9 +56,6 @@ export default function Debts() {
                     status: 'Pendente' as const,
                     createdAt: new Date().toISOString()
                 };
-
-                const updated = [...debts, newDebt];
-                updateCache(user.uid, 'debts', updated as any);
                 await setDoc(debtRef, newDebt);
                 toast('Dívida registrada com sucesso!', 'success');
             }
@@ -101,8 +91,6 @@ export default function Debts() {
         if (!user) return;
         if (!window.confirm('Tem certeza que deseja excluir esta dívida?')) return;
         try {
-            const updated = debts.filter(d => d.debtId !== debtId);
-            updateCache(user.uid, 'debts', updated as any);
             await deleteDoc(doc(db, 'stores', user.uid, 'debts', debtId));
             toast('Dívida excluída!', 'success');
         } catch (error) {
@@ -113,8 +101,6 @@ export default function Debts() {
 
     const handleMarkAsPaid = async (debtId: string) => {
         if (!user) return;
-        const updated = debts.map(d => d.debtId === debtId ? { ...d, status: 'Paga' as const } : d);
-        updateCache(user.uid, 'debts', updated as any);
         try {
             const debtRef = doc(db, 'stores', user.uid, 'debts', debtId);
             await updateDoc(debtRef, { status: 'Paga' });
@@ -122,6 +108,18 @@ export default function Debts() {
         } catch (error) {
             console.error('Erro ao atualizar status da dívida:', error);
             toast('Erro ao atualizar.', 'error');
+        }
+    };
+
+    const handleRevertToFiado = async (debtId: string) => {
+        if (!user) return;
+        try {
+            const debtRef = doc(db, 'stores', user.uid, 'debts', debtId);
+            await updateDoc(debtRef, { status: 'Pendente' });
+            toast('Dívida revertida para pendente!', 'success');
+        } catch (error) {
+            console.error('Erro ao reverter dívida:', error);
+            toast('Erro ao reverter.', 'error');
         }
     };
 
@@ -247,13 +245,21 @@ export default function Debts() {
                                                 </td>
                                                 <td className="py-3 px-2 text-right">
                                                     <div className="flex gap-1.5 justify-end">
-                                                        {debt.status !== 'Paga' && (
+                                                        {debt.status !== 'Paga' ? (
                                                             <button
                                                                 onClick={() => handleMarkAsPaid(debt.debtId)}
                                                                 className="bg-emerald-100 text-emerald-700 p-1.5 rounded-full hover:bg-emerald-200 transition-colors inline-flex items-center justify-center cursor-pointer"
                                                                 title="Marcar como Pago"
                                                             >
                                                                 <CheckCircle className="w-4 h-4" />
+                                                            </button>
+                                                        ) : (
+                                                            <button
+                                                                onClick={() => handleRevertToFiado(debt.debtId)}
+                                                                className="bg-orange-100 text-orange-700 p-1.5 rounded-full hover:bg-orange-200 transition-colors inline-flex items-center justify-center cursor-pointer"
+                                                                title="Reverter para Pendente"
+                                                            >
+                                                                <Undo2 className="w-4 h-4" />
                                                             </button>
                                                         )}
                                                         <button

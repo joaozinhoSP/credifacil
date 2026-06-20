@@ -13,7 +13,7 @@ import {
 import { Product, Customer, Debt } from '../types';
 import UpgradeModal from './UpgradeModal';
 import { useToast } from '../lib/Toast';
-import { getWhatsappLink, updateCache } from '../lib/utils';
+import { getWhatsappLink } from '../lib/utils';
 
 export default function Inventory() {
     const { user } = useAuth();
@@ -54,15 +54,20 @@ export default function Inventory() {
         return d.toISOString().split('T')[0];
     });
     const [modalDesc, setModalDesc] = useState('');
-    const [modalPayType, setModalPayType] = useState<'fiado' | 'a_vista'>('fiado');
     const [modalIsNew, setModalIsNew] = useState(false);
     const [modalNewName, setModalNewName] = useState('');
     const [modalNewPhone, setModalNewPhone] = useState('');
     const [saleLoading, setSaleLoading] = useState(false);
+    const submittingSale = useRef(false);
 
     // ─── DETAILS MODAL ───────────────────────────────────────────────────
     const [showDetailsModal, setShowDetailsModal] = useState(false);
     const [detailsCustomerId, setDetailsCustomerId] = useState('');
+
+    // ─── INLINE DEBT EDIT ─────────────────────────────────────────────────
+    const [editDebtId, setEditDebtId] = useState<string | null>(null);
+    const [editDebtValue, setEditDebtValue] = useState<number | ''>('');
+    const [editDebtDesc, setEditDebtDesc] = useState('');
 
     // ─── RAFFLE ──────────────────────────────────────────────────────────
     const [winner, setWinner] = useState<Customer | null>(null);
@@ -80,11 +85,6 @@ export default function Inventory() {
             setModalDesc('');
         }
     }, [modalProductId, modalQty, targetProduct]);
-
-    const fireEvent = (key: string, data: any[]) => {
-        if (!user) return;
-        updateCache(user.uid, key, data);
-    };
 
     // ─── IMAGE UPLOAD ─────────────────────────────────────────────────────
     const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -109,26 +109,27 @@ export default function Inventory() {
     };
 
     // ─── PRODUCT CRUD ─────────────────────────────────────────────────────
-    const handleSubmitProduct = (e: React.FormEvent) => {
+    const handleSubmitProduct = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !productName || productQuantity === '' || productPrice === '') return;
         const isPro = storeInfo?.subscriptionStatus === 'pro';
         if (!isPro && products.length >= 10 && !editingProduct) { setShowUpgradeModal(true); return; }
         const qty = Number(productQuantity), prc = Number(productPrice);
-        if (editingProduct) {
-            const updated: Product = { ...editingProduct, name: productName, quantity: qty, price: prc, imageUrl: productImageUrl };
-            fireEvent('products', products.map(p => p.productId === editingProduct.productId ? updated : p));
-            updateDoc(doc(db, 'stores', user.uid, 'products', editingProduct.productId), { name: productName, quantity: qty, price: prc, imageUrl: productImageUrl })
-                .catch(console.error);
-            setEditingProduct(null);
-        } else {
-            const ref = doc(collection(db, 'stores', user.uid, 'products'));
-            const newP: Product = { productId: ref.id, storeId: user.uid, name: productName, quantity: qty, price: prc, imageUrl: productImageUrl, createdAt: new Date().toISOString() };
-            fireEvent('products', [...products, newP]);
-            setDoc(ref, newP).catch(console.error);
+        try {
+            if (editingProduct) {
+                await updateDoc(doc(db, 'stores', user.uid, 'products', editingProduct.productId), { name: productName, quantity: qty, price: prc, imageUrl: productImageUrl });
+                setEditingProduct(null);
+            } else {
+                const ref = doc(collection(db, 'stores', user.uid, 'products'));
+                await setDoc(ref, { productId: ref.id, storeId: user.uid, name: productName, quantity: qty, price: prc, imageUrl: productImageUrl, createdAt: new Date().toISOString() });
+            }
+            setProductName(''); setProductQuantity(''); setProductPrice(''); setProductImageUrl('');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            toast(editingProduct ? 'Produto atualizado com sucesso!' : 'Produto cadastrado com sucesso!', 'success');
+        } catch (err) {
+            console.error('Erro ao salvar produto:', err);
+            toast('Erro ao salvar produto. Tente novamente.', 'error');
         }
-        setProductName(''); setProductQuantity(''); setProductPrice(''); setProductImageUrl('');
-        if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
     const handleStartEdit = (p: Product) => {
@@ -141,17 +142,26 @@ export default function Inventory() {
         if (fileInputRef.current) fileInputRef.current.value = '';
     };
 
-    const handleDeleteProduct = (id: string) => {
+    const handleDeleteProduct = async (id: string) => {
         if (!user || !window.confirm('Excluir este produto?')) return;
-        fireEvent('products', products.filter(p => p.productId !== id));
-        deleteDoc(doc(db, 'stores', user.uid, 'products', id)).catch(console.error);
+        try {
+            await deleteDoc(doc(db, 'stores', user.uid, 'products', id));
+            toast('Produto excluído!', 'success');
+        } catch (err) {
+            console.error('Erro ao excluir produto:', err);
+            toast('Erro ao excluir produto.', 'error');
+        }
     };
 
-    const handleAdjustQty = (id: string, cur: number, delta: number) => {
+    const handleAdjustQty = async (id: string, cur: number, delta: number) => {
         if (!user) return;
         const nq = Math.max(0, cur + delta);
-        fireEvent('products', products.map(p => p.productId === id ? { ...p, quantity: nq } : p));
-        updateDoc(doc(db, 'stores', user.uid, 'products', id), { quantity: nq }).catch(console.error);
+        try {
+            await updateDoc(doc(db, 'stores', user.uid, 'products', id), { quantity: nq });
+        } catch (err) {
+            console.error('Erro ao ajustar quantidade:', err);
+            toast('Erro ao ajustar quantidade.', 'error');
+        }
     };
 
     const toggleSort = (field: 'name' | 'quantity' | 'price' | 'totalValue') => {
@@ -165,17 +175,22 @@ export default function Inventory() {
     const handleSelectAll = (list: Product[]) =>
         setSelectedProductIds(selectedProductIds.length === list.length ? [] : list.map(p => p.productId));
 
-    const handleDeleteSelected = () => {
+    const handleDeleteSelected = async () => {
         if (!user || selectedProductIds.length === 0) return;
         if (!window.confirm(`Excluir ${selectedProductIds.length} produto(s) selecionado(s)?`)) return;
         const toDelete = [...selectedProductIds];
-        fireEvent('products', products.filter(p => !toDelete.includes(p.productId)));
         setSelectedProductIds([]);
-        toDelete.forEach(id => deleteDoc(doc(db, 'stores', user.uid, 'products', id)).catch(console.error));
+        try {
+            await Promise.all(toDelete.map(id => deleteDoc(doc(db, 'stores', user.uid, 'products', id))));
+            toast(`${toDelete.length} produto(s) excluído(s)!`, 'success');
+        } catch (err) {
+            console.error('Erro ao excluir produtos:', err);
+            toast('Erro ao excluir produtos.', 'error');
+        }
     };
 
     // ─── ADD INVENTORY CUSTOMER ───────────────────────────────────────────
-    const handleAddCustomer = (e: React.FormEvent) => {
+    const handleAddCustomer = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!user || !newCustName) return;
         const isPro = storeInfo?.subscriptionStatus === 'pro';
@@ -183,10 +198,12 @@ export default function Inventory() {
         setCustLoading(true);
         try {
             const ref = doc(collection(db, 'stores', user.uid, 'inventory_customers'));
-            const c: Customer = { customerId: ref.id, storeId: user.uid, name: newCustName, phone: newCustPhone, status: 'Ativo', createdAt: new Date().toISOString() };
-            fireEvent('inventory_customers', [...inventoryCustomers, c]);
-            setDoc(ref, c).catch(console.error);
+            await setDoc(ref, { customerId: ref.id, storeId: user.uid, name: newCustName, phone: newCustPhone, status: 'Ativo', createdAt: new Date().toISOString() });
             setNewCustName(''); setNewCustPhone('');
+            toast('Cliente cadastrado com sucesso!', 'success');
+        } catch (err) {
+            console.error('Erro ao cadastrar cliente:', err);
+            toast('Erro ao cadastrar cliente.', 'error');
         } finally { setCustLoading(false); }
     };
 
@@ -203,14 +220,15 @@ export default function Inventory() {
     };
 
     // ─── REGISTER SALE ────────────────────────────────────────────────────
-    const handleRegisterSale = (e: React.FormEvent) => {
+    const handleRegisterSale = async (e: React.FormEvent) => {
         e.preventDefault();
-        if (!user || !targetProduct || !modalQty) return;
+        if (!user || !targetProduct || !modalQty || submittingSale.current) return;
         if (Number(modalQty) > targetProduct.quantity) {
             toast(`Estoque insuficiente! Apenas ${targetProduct.quantity} disponíveis.`, 'error'); return;
         }
         if (modalIsNew && !modalNewName) { toast('Informe o nome do cliente.', 'error'); return; }
         if (!modalIsNew && !modalCustomerId) { toast('Selecione um cliente.', 'error'); return; }
+        submittingSale.current = true;
         setSaleLoading(true);
         try {
             let custId = modalCustomerId;
@@ -219,58 +237,104 @@ export default function Inventory() {
             // Create new customer if needed
             if (modalIsNew) {
                 const ref = doc(collection(db, 'stores', user.uid, 'inventory_customers'));
-                const nc: Customer = { customerId: ref.id, storeId: user.uid, name: modalNewName, phone: modalNewPhone, status: 'Ativo', createdAt: new Date().toISOString() };
-                fireEvent('inventory_customers', [...inventoryCustomers, nc]);
-                setDoc(ref, nc).catch(console.error);
+                await setDoc(ref, { customerId: ref.id, storeId: user.uid, name: modalNewName, phone: modalNewPhone, status: 'Ativo', createdAt: new Date().toISOString() });
                 custId = ref.id; custName = modalNewName;
             }
 
-            // Create debt in ISOLATED collection
+            // Create debt — always fiado (Pendente), user marks as paid manually
             const debtRef = doc(collection(db, 'stores', user.uid, 'inventory_debts'));
-            const isPaid = modalPayType === 'a_vista';
             const newDebt: Debt = {
                 debtId: debtRef.id, customerId: custId, customerName: custName,
                 storeId: user.uid, value: targetProduct.price * Number(modalQty),
                 description: modalDesc || `Compra de: ${targetProduct.name} (x${modalQty})`,
-                dueDate: isPaid ? new Date().toISOString().split('T')[0] : modalDueDate,
-                status: isPaid ? 'Paga' : 'Pendente',
+                dueDate: modalDueDate,
+                status: 'Pendente',
                 createdAt: new Date().toISOString()
             };
-            fireEvent('inventory_debts', [...inventoryDebts, newDebt]);
-            setDoc(debtRef, newDebt).catch(console.error);
+            await setDoc(debtRef, newDebt);
 
             // Reduce stock
             const newQty = targetProduct.quantity - Number(modalQty);
-            fireEvent('products', products.map(p => p.productId === targetProduct.productId ? { ...p, quantity: newQty } : p));
-            updateDoc(doc(db, 'stores', user.uid, 'products', targetProduct.productId), { quantity: newQty }).catch(console.error);
+            await updateDoc(doc(db, 'stores', user.uid, 'products', targetProduct.productId), { quantity: newQty });
 
             const totalVal = (targetProduct.price * Number(modalQty)).toFixed(2);
-            toast(`Venda registrada! ${isPaid ? 'À Vista — Pago.' : 'Fiado lançado.'} Valor: R$ ${totalVal}`, 'success');
+            toast(`Venda registrada! Fiado lançado — R$ ${totalVal}`, 'success');
 
             setShowSaleModal(false);
             setModalProductId(''); setModalCustomerId(''); setModalIsNew(false);
-            setModalNewName(''); setModalNewPhone(''); setModalQty(1); setModalPayType('fiado');
-        } catch (err) { console.error(err); }
-        finally { setSaleLoading(false); }
+            setModalNewName(''); setModalNewPhone(''); setModalQty(1);
+        } catch (err) {
+            console.error('Erro ao registrar venda:', err);
+            toast('Erro ao registrar venda. Tente novamente.', 'error');
+        }
+        finally { setSaleLoading(false); submittingSale.current = false; }
     };
 
     // ─── PAY DEBT (Single) ────────────────────────────────────────────────
-    const handlePayDebt = (debtId: string) => {
+    const handlePayDebt = async (debtId: string) => {
         if (!user) return;
-        const updated = inventoryDebts.map(d => d.debtId === debtId ? { ...d, status: 'Paga' as const } : d);
-        fireEvent('inventory_debts', updated);
-        updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', debtId), { status: 'Paga' }).catch(console.error);
+        try {
+            await updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', debtId), { status: 'Paga' });
+            toast('Dívida quitada!', 'success');
+        } catch (err) {
+            console.error('Erro ao quitar dívida:', err);
+            toast('Erro ao quitar dívida.', 'error');
+        }
     };
 
     // ─── PAY ALL DEBTS (Customer) ─────────────────────────────────────────
-    const handlePayAllDebts = (customerId: string) => {
+    const handlePayAllDebts = async (customerId: string) => {
         if (!user || !window.confirm('Quitar todas as dívidas pendentes deste cliente?')) return;
         const pending = inventoryDebts.filter(d => d.customerId === customerId && d.status === 'Pendente');
-        const updated = inventoryDebts.map(d => d.customerId === customerId && d.status === 'Pendente' ? { ...d, status: 'Paga' as const } : d);
-        fireEvent('inventory_debts', updated);
-        pending.forEach(d =>
-            updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', d.debtId), { status: 'Paga' }).catch(console.error)
-        );
+        try {
+            await Promise.all(pending.map(d =>
+                updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', d.debtId), { status: 'Paga' })
+            ));
+            toast('Todas as dívidas foram quitadas!', 'success');
+        } catch (err) {
+            console.error('Erro ao quitar dívidas:', err);
+            toast('Erro ao quitar dívidas.', 'error');
+        }
+    };
+
+    // ─── REVERT DEBT ───────────────────────────────────────────────────────
+    const handleRevertDebt = async (debtId: string) => {
+        if (!user) return;
+        try {
+            await updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', debtId), { status: 'Pendente' });
+            toast('Dívida revertida para pendente!', 'success');
+        } catch (err) {
+            console.error('Erro ao reverter dívida:', err);
+            toast('Erro ao reverter dívida.', 'error');
+        }
+    };
+
+    // ─── EDIT DEBT ─────────────────────────────────────────────────────────
+    const handleStartEditDebt = (debt: Debt) => {
+        setEditDebtId(debt.debtId);
+        setEditDebtValue(debt.value);
+        setEditDebtDesc(debt.description || '');
+    };
+
+    const handleCancelEditDebt = () => {
+        setEditDebtId(null);
+        setEditDebtValue('');
+        setEditDebtDesc('');
+    };
+
+    const handleSaveEditDebt = async () => {
+        if (!user || !editDebtId || editDebtValue === '' || Number(editDebtValue) <= 0) return;
+        try {
+            await updateDoc(doc(db, 'stores', user.uid, 'inventory_debts', editDebtId), {
+                value: Number(editDebtValue),
+                description: editDebtDesc,
+            });
+            toast('Dívida atualizada!', 'success');
+            handleCancelEditDebt();
+        } catch (err) {
+            console.error('Erro ao atualizar dívida:', err);
+            toast('Erro ao atualizar dívida.', 'error');
+        }
     };
 
     // ─── RAFFLE ───────────────────────────────────────────────────────────
@@ -618,7 +682,7 @@ export default function Inventory() {
                                                             <td className="py-3 px-2 text-right">
                                                                 <div className="flex gap-1.5 justify-end">
                                                                     {/* Ver histórico e pagar */}
-                                                                    <button onClick={() => { setDetailsCustomerId(c.customerId); setShowDetailsModal(true); }}
+                                                                    <button onClick={() => { handleCancelEditDebt(); setDetailsCustomerId(c.customerId); setShowDetailsModal(true); }}
                                                                         className="bg-blue-50 text-blue-600 hover:bg-blue-100 p-1.5 rounded-full transition cursor-pointer" title="Ver Histórico / Pagar Dívida">
                                                                         <Eye className="w-3.5 h-3.5" />
                                                                     </button>
@@ -818,25 +882,10 @@ export default function Inventory() {
                                     <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1">Selecione o Produto</label>
                                     <select value={modalProductId} onChange={e => setModalProductId(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 bg-white h-9" required>
                                         <option value="">Selecione um produto...</option>
-                                        {products.filter(p => p.quantity > 0).map(p => <option key={p.productId} value={p.productId}>{p.name} — R$ {p.price.toFixed(2)} ({p.quantity} disp.)</option>)}
+                                        {products.map(p => <option key={p.productId} value={p.productId}>{p.name} — R$ {p.price.toFixed(2)} ({p.quantity} disp.){p.quantity === 0 ? ' (SEM ESTOQUE)' : ''}</option>)}
                                     </select>
                                 </div>
                             )}
-
-                            {/* Payment type */}
-                            <div>
-                                <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1">Forma de Pagamento</label>
-                                <div className="grid grid-cols-2 gap-2">
-                                    <button type="button" onClick={() => setModalPayType('fiado')}
-                                        className={`py-2.5 rounded-xl font-bold transition cursor-pointer border text-xs ${modalPayType === 'fiado' ? 'bg-orange-500 text-white border-orange-500' : 'bg-orange-50 text-orange-600 border-orange-200 hover:bg-orange-100'}`}>
-                                        📋 Fiado (A Prazo)
-                                    </button>
-                                    <button type="button" onClick={() => setModalPayType('a_vista')}
-                                        className={`py-2.5 rounded-xl font-bold transition cursor-pointer border text-xs ${modalPayType === 'a_vista' ? 'bg-emerald-600 text-white border-emerald-600' : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'}`}>
-                                        💰 À Vista (Pago)
-                                    </button>
-                                </div>
-                            </div>
 
                             {/* Qty & Due Date */}
                             <div className="grid grid-cols-2 gap-3">
@@ -845,8 +894,8 @@ export default function Inventory() {
                                     <input type="number" min="1" max={targetProduct?.quantity || 999} value={modalQty} onChange={e => setModalQty(e.target.value === '' ? '' : Number(e.target.value))} className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 h-9" required disabled={!modalProductId} />
                                 </div>
                                 <div>
-                                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1">Vencimento {modalPayType === 'a_vista' && '(não necessário)'}</label>
-                                    <input type="date" value={modalDueDate} onChange={e => setModalDueDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 h-9 bg-white" disabled={modalPayType === 'a_vista'} />
+                                    <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wide mb-1">Vencimento</label>
+                                    <input type="date" value={modalDueDate} onChange={e => setModalDueDate(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500 h-9 bg-white" />
                                 </div>
                             </div>
 
@@ -889,7 +938,7 @@ export default function Inventory() {
                                 <h3 className="text-sm font-black text-slate-900">{detailsCustomer.name}</h3>
                                 <p className="text-[10px] text-slate-500">{detailsCustomer.phone || 'Sem telefone'} · Histórico do Estoque</p>
                             </div>
-                            <button onClick={() => setShowDetailsModal(false)} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-5 h-5" /></button>
+                            <button onClick={() => { setShowDetailsModal(false); handleCancelEditDebt(); }} className="text-slate-400 hover:text-slate-600 cursor-pointer"><X className="w-5 h-5" /></button>
                         </div>
 
                         {/* Summary */}
@@ -922,25 +971,66 @@ export default function Inventory() {
                             ) : (
                                 <div className="space-y-2">
                                     {detailsDebts.map(d => (
-                                        <div key={d.debtId} className={`p-3 rounded-xl border text-xs flex justify-between items-center gap-2 ${d.status === 'Paga' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-orange-50/50 border-orange-100'}`}>
-                                            <div className="flex-1 min-w-0">
-                                                <p className="font-bold text-slate-800 truncate">{d.description || 'Compra sem descrição'}</p>
-                                                <p className="text-[9px] text-slate-400 mt-0.5">
-                                                    {d.createdAt ? new Date(d.createdAt).toLocaleDateString('pt-BR') : d.dueDate}
-                                                    {d.status === 'Pendente' && ` · Vence: ${new Date(d.dueDate).toLocaleDateString('pt-BR')}`}
-                                                </p>
-                                            </div>
-                                            <div className="flex items-center gap-2 shrink-0">
-                                                <span className="font-black text-slate-900">R$ {Number(d.value).toFixed(2)}</span>
-                                                {d.status === 'Paga' ? (
-                                                    <span className="bg-emerald-100 text-emerald-700 font-bold px-2 py-0.5 rounded-full text-[9px]">✓ Pago</span>
-                                                ) : (
-                                                    <button onClick={() => handlePayDebt(d.debtId)}
-                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg transition cursor-pointer text-[9px] flex items-center gap-1 whitespace-nowrap">
-                                                        <DollarSign className="w-3 h-3" /> Pagar
-                                                    </button>
-                                                )}
-                                            </div>
+                                        <div key={d.debtId} className={`p-3 rounded-xl border text-xs ${d.status === 'Paga' ? 'bg-emerald-50/50 border-emerald-100' : 'bg-orange-50/50 border-orange-100'}`}>
+                                            {editDebtId === d.debtId ? (
+                                                <div className="flex items-center gap-2">
+                                                    <div className="flex-1 space-y-1.5">
+                                                        <div className="flex gap-2">
+                                                            <input type="number" step="0.01" min="0.01"
+                                                                value={editDebtValue}
+                                                                onChange={e => setEditDebtValue(e.target.value === '' ? '' : Number(e.target.value))}
+                                                                className="w-24 px-2 py-1 border border-slate-200 rounded-lg text-xs"
+                                                                placeholder="Valor" />
+                                                            <span className="font-black text-slate-900 self-center">
+                                                                R$ {Number(editDebtValue || 0).toFixed(2)}
+                                                            </span>
+                                                        </div>
+                                                        <input type="text" value={editDebtDesc}
+                                                            onChange={e => setEditDebtDesc(e.target.value)}
+                                                            className="w-full px-2 py-1 border border-slate-200 rounded-lg text-xs"
+                                                            placeholder="Descrição" />
+                                                    </div>
+                                                    <div className="flex gap-1 shrink-0">
+                                                        <button onClick={handleSaveEditDebt}
+                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1.5 rounded-lg transition cursor-pointer text-[9px]">
+                                                            Salvar
+                                                        </button>
+                                                        <button onClick={handleCancelEditDebt}
+                                                            className="bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold px-2.5 py-1.5 rounded-lg transition cursor-pointer text-[9px]">
+                                                            Cancelar
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="flex justify-between items-center gap-2">
+                                                    <div className="flex-1 min-w-0">
+                                                        <p className="font-bold text-slate-800 truncate">{d.description || 'Compra sem descrição'}</p>
+                                                        <p className="text-[9px] text-slate-400 mt-0.5">
+                                                            {d.createdAt ? new Date(d.createdAt).toLocaleDateString('pt-BR') : d.dueDate}
+                                                            {d.status === 'Pendente' && ` · Vence: ${new Date(d.dueDate).toLocaleDateString('pt-BR')}`}
+                                                        </p>
+                                                    </div>
+                                                    <div className="flex items-center gap-1.5 shrink-0">
+                                                        <button onClick={() => handleStartEditDebt(d)}
+                                                            className="bg-amber-50 text-amber-600 p-1.5 rounded-full hover:bg-amber-100 transition cursor-pointer"
+                                                            title="Editar valor / descrição">
+                                                            <Pencil className="w-3 h-3" />
+                                                        </button>
+                                                        <span className="font-black text-slate-900">R$ {Number(d.value).toFixed(2)}</span>
+                                                        {d.status === 'Paga' ? (
+                                                            <button onClick={() => handleRevertDebt(d.debtId)}
+                                                                className="bg-orange-100 text-orange-700 font-bold px-2 py-0.5 rounded-full text-[9px] hover:bg-orange-200 transition cursor-pointer whitespace-nowrap">
+                                                                Reverter
+                                                            </button>
+                                                        ) : (
+                                                            <button onClick={() => handlePayDebt(d.debtId)}
+                                                                className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold px-2.5 py-1 rounded-lg transition cursor-pointer text-[9px] flex items-center gap-1 whitespace-nowrap">
+                                                                <DollarSign className="w-3 h-3" /> Pagar
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            )}
                                         </div>
                                     ))}
                                 </div>

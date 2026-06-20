@@ -8,7 +8,6 @@ import { updatePassword, sendPasswordResetEmail } from 'firebase/auth';
 import UpgradeModal from './UpgradeModal';
 import { Settings as SettingsIcon, Shield, Key, Sparkles, AlertTriangle, HelpCircle, HardDrive, RefreshCw } from 'lucide-react';
 import { useToast } from '../lib/Toast';
-import { updateCache } from '../lib/utils';
 
 export default function Settings() {
     const { user } = useAuth();
@@ -17,7 +16,6 @@ export default function Settings() {
     const [userName, setUserName] = useState('');
     const [defaultCreditLimit, setDefaultCreditLimit] = useState<number | ''>('');
     const [saving, setSaving] = useState(false);
-    const [isInitialized, setIsInitialized] = useState(false);
     const [showUpgradeModal, setShowUpgradeModal] = useState(false);
 
     // Password State
@@ -31,16 +29,14 @@ export default function Settings() {
 
     const isPro = storeInfo?.subscriptionStatus === 'pro';
 
-    // Populate initial state
     useEffect(() => {
-        if (storeInfo && Object.keys(storeInfo).length > 0 && !isInitialized) {
-            setShopName(storeInfo.name || '');
+        if (storeInfo && storeInfo.name) {
+            setShopName(storeInfo.name);
             setUserName(storeInfo.ownerName || (user?.displayName || ''));
             const settings = storeInfo.settings || {};
             setDefaultCreditLimit(settings.defaultCreditLimit ?? '');
-            setIsInitialized(true);
         }
-    }, [storeInfo, isInitialized, user]);
+    }, [storeInfo?.name, storeInfo?.ownerName, storeInfo?.settings?.defaultCreditLimit, user]);
 
     const handleSaveInfo = async () => {
         if (!user) return;
@@ -57,9 +53,6 @@ export default function Settings() {
             settings: localSettings
         };
         
-        updateCache(user.uid, 'settings', localSettings as any);
-        localStorage.setItem(`cache_store_info_${user.uid}`, JSON.stringify(localStoreInfo));
-
         try {
             const storeRef = doc(db, 'stores', user.uid);
             await setDoc(storeRef, {
@@ -345,7 +338,7 @@ export default function Settings() {
                                 <div className="border-t border-slate-100 pt-3 flex justify-between items-center text-[10px]">
                                     <span className="text-slate-400">Dúvidas? Fale com a gente:</span>
                                     <a 
-                                        href="https://wa.me/5511999999999?text=Preciso%20de%20ajuda%20com%20o%20CrediFácil" 
+                                        href="https://wa.me/5511999999999?text=Preciso%20de%20ajuda%20com%20o%20Gest%C3%A3oPro" 
                                         target="_blank" 
                                         rel="noreferrer"
                                         className="text-emerald-600 font-bold hover:underline"

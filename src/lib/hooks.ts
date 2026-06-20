@@ -45,9 +45,16 @@ function useCollection<T extends DocumentData>(
             collection(db, 'stores', storeId, collectionName),
             limit(200)
         );
+        let hasReceivedData = false;
+
         const unsub = onSnapshot(q,
             (snapshot) => {
                 const mapped = snapshot.docs.map(doc => ({ ...doc.data() as T, [idField]: doc.id }));
+                if (mapped.length === 0 && hasReceivedData) {
+                    const cached = readCache<T[]>(storeId, cacheKey);
+                    if (cached && cached.length > 0) return;
+                }
+                hasReceivedData = true;
                 setData(mapped);
                 setLoading(false);
                 updateCache(storeId, cacheKey, mapped);
@@ -72,7 +79,7 @@ function useCollection<T extends DocumentData>(
 export function useStoreData() {
     const { user } = useAuth();
     const storeId = user?.uid;
-    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const isDev = import.meta.env.DEV;
 
     const customers = useCollection<Customer>(storeId, 'customers', 'customers', 'customerId');
     const debts = useCollection<Debt>(storeId, 'debts', 'debts', 'debtId');
@@ -83,10 +90,10 @@ export function useStoreData() {
     const [storeInfo, setStoreInfo] = useState<{ name?: string; ownerName?: string; email?: string; subscriptionStatus?: 'free' | 'pro'; settings?: { defaultCreditLimit?: number; whatsappMessage?: string } }>(() => {
         const cached = readCache<typeof storeInfo>(storeId, 'store_info');
         if (cached) {
-            if (isLocal) cached.subscriptionStatus = 'pro';
+            if (isDev) cached.subscriptionStatus = 'pro';
             return cached;
         }
-        return {};
+        return isDev ? { subscriptionStatus: 'pro' as const } : {};
     });
     const [storeInfoLoading, setStoreInfoLoading] = useState(true);
     const [storeInfoError, setStoreInfoError] = useState<string | null>(null);
@@ -103,8 +110,10 @@ export function useStoreData() {
 
         const cached = readCache<typeof storeInfo>(storeId, 'store_info');
         if (cached) {
-            if (isLocal) cached.subscriptionStatus = 'pro';
+            if (isDev) cached.subscriptionStatus = 'pro';
             setStoreInfo(cached);
+        } else if (isDev) {
+            setStoreInfo({ subscriptionStatus: 'pro' });
         }
         const cachedS = readCache<typeof storeSettings>(storeId, 'settings');
         if (cachedS) setStoreSettings(cachedS);
@@ -112,8 +121,10 @@ export function useStoreData() {
         const handleStorageSync = () => {
             const cInfo = readCache<typeof storeInfo>(storeId, 'store_info');
             if (cInfo) {
-                if (isLocal) cInfo.subscriptionStatus = 'pro';
+                if (isDev) cInfo.subscriptionStatus = 'pro';
                 setStoreInfo(cInfo);
+            } else if (isDev) {
+                setStoreInfo({ subscriptionStatus: 'pro' });
             }
             const cSets = readCache<typeof storeSettings>(storeId, 'settings');
             if (cSets) setStoreSettings(cSets);
@@ -149,7 +160,7 @@ export function useStoreData() {
                         name: data.name || '',
                         ownerName: data.ownerName || '',
                         email: data.email || user?.email || '',
-                        subscriptionStatus: isLocal ? 'pro' : (data.subscriptionStatus || 'free'),
+                        subscriptionStatus: isDev ? 'pro' : (data.subscriptionStatus || 'free'),
                         settings: settings
                     };
                     setStoreSettings(settings);
@@ -173,7 +184,7 @@ export function useStoreData() {
             window.removeEventListener('cache-update', handleCacheUpdate as EventListener);
             unsubStore();
         };
-    }, [storeId, user, isLocal]);
+    }, [storeId, user, isDev]);
 
     return {
         customers: customers.data,

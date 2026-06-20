@@ -8,7 +8,7 @@ import { db } from '../lib/firebase';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import { Users, DollarSign, BarChart3, TrendingUp, CheckCircle, MessageSquare, ShoppingBag, ArrowUpRight } from 'lucide-react';
 import { useToast } from '../lib/Toast';
-import { getWhatsappLink, aggregateDebtsByCustomer, updateCache } from '../lib/utils';
+import { getWhatsappLink, aggregateDebtsByCustomer } from '../lib/utils';
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -64,10 +64,6 @@ export default function Dashboard() {
 
   const handleMarkAsPaid = async (debtId: string) => {
     if (!user) return;
-
-    // Optimistic UI update
-    const updatedDebts = debts.map(d => d.debtId === debtId ? { ...d, status: 'Paga' as const } : d);
-    updateCache(user.uid, 'debts', updatedDebts);
 
     try {
       const debtRef = doc(db, 'stores', user.uid, 'debts', debtId);

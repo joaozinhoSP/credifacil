@@ -1,0 +1,74 @@
+generator client {
+  provider = "prisma-client-js"
+  output   = "../server/generated"
+}
+
+datasource db {
+  provider = "sqlite"
+}
+
+model User {
+  id             String    @id @default(uuid())
+  name           String
+  email          String    @unique
+  phone          String
+  password       String
+  baseAddress    String
+  baseLat        Float?
+  baseLng        Float?
+  startTime      String    @default("08:00")
+  avgServiceTime Int       @default(30)
+  plan           String    @default("free")
+  planExpiresAt  DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  visits Visit[]
+  routes Route[]
+}
+
+model Visit {
+  id           String   @id @default(uuid())
+  userId       String
+  name         String
+  address      String
+  number       String
+  neighborhood String
+  city         String
+  zipCode      String
+  phone        String
+  timeWindow   String   @default("none")
+  lat          Float?
+  lng          Float?
+  status       String   @default("draft")
+  sortOrder    Int?
+  routeId      String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  user  User   @relation(fields: [userId], references: [id])
+  route Route? @relation(fields: [routeId], references: [id])
+}
+
+model Route {
+  id             String   @id @default(uuid())
+  userId         String
+  date           DateTime @default(now())
+  status         String   @default("draft")
+  totalDuration  Float?
+  totalDistance  Float?
+  optimizedOrder String?
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  user   User    @relation(fields: [userId], references: [id])
+  visits Visit[]
+}
+
+model AddressCache {
+  id        String   @id @default(uuid())
+  address   String   @unique
+  lat       Float
+  lng       Float
+  createdAt DateTime @default(now())
+}
