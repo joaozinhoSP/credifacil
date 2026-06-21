@@ -70,7 +70,8 @@ export default function LandingPage() {
             >
                 <div className="flex justify-between items-center py-4 px-6 md:px-8 max-w-7xl mx-auto">
                     <div className="flex items-center gap-2">
-                        <img src="/logo.png" alt="MeuNegócioPro" className="h-12 w-auto" />
+                        <img src="/logo.png" alt="GestãoPro" className="h-12 w-auto" />
+                        <span className="text-xl font-bold text-slate-800 hidden sm:inline">GestãoPro</span>
                     </div>
 
                     <nav className="hidden md:flex items-center gap-8 text-sm font-semibold text-slate-600">

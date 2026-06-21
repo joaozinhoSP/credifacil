@@ -30,7 +30,7 @@ export default function Sidebar({ isOpen, onClose }: { isOpen: boolean; onClose?
     const sidebarContent = (
         <aside className="w-64 bg-white border-r border-gray-200 flex flex-col h-full font-sans">
           <div className="p-6 flex items-center justify-between">
-            <img src="/logo.png" alt="MeuNegócioPro" className="h-12 w-auto" />
+            <img src="/logo.png" alt="GestãoPro" className="h-12 w-auto" />
             {onClose && (
                 <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1 cursor-pointer">
                     <X className="w-5 h-5" />

@@ -99,7 +99,7 @@ export default function Login() {
         <div className="flex justify-center items-center h-screen bg-gray-100">
             <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md w-96">
                 <div className="flex flex-col items-center mb-6">
-                    <img src="/logo.png" alt="MeuNegócioPro" className="h-14 w-auto mb-3" />
+                    <img src="/logo.png" alt="GestãoPro" className="h-14 w-auto mb-3" />
                     <h1 className="text-2xl font-bold text-emerald-600">Login</h1>
                 </div>
                 {resetSent && <p className="text-emerald-600 text-sm mb-4 font-semibold">E-mail de redefinição enviado! Verifique sua caixa de entrada.</p>}
