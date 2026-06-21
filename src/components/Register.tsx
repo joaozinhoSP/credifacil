@@ -67,7 +67,7 @@ export default function Register() {
         return (
             <div className="flex justify-center items-center h-screen bg-gray-100">
                 <div className="bg-white p-8 rounded-lg shadow-md w-96 text-center">
-                    <img src="/logo.png" alt="GestãoPro" className="h-14 w-auto mx-auto mb-3" />
+                    <img src="/logo.png" alt="CrediFácil" className="h-14 w-auto mx-auto mb-3" />
                     <h1 className="text-xl font-bold text-emerald-600 mb-2">Conta criada com sucesso!</h1>
                     <p className="text-sm text-slate-600 mb-4">
                         Enviamos um e-mail de verificação para <strong>{email}</strong>.
@@ -86,7 +86,7 @@ export default function Register() {
         <div className="flex justify-center items-center h-screen bg-gray-100">
             <form onSubmit={handleSubmit} className="bg-white p-8 rounded-lg shadow-md w-96 font-sans">
                 <div className="flex flex-col items-center mb-6">
-                    <img src="/logo.png" alt="GestãoPro" className="h-14 w-auto mb-3" />
+                    <img src="/logo.png" alt="CrediFácil" className="h-14 w-auto mb-3" />
                     <h1 className="text-2xl font-bold text-emerald-600">Cadastro</h1>
                 </div>
                 {error && <p className="text-red-500 mb-4">{error}</p>}

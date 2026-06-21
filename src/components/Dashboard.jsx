@@ -167,7 +167,7 @@ export default function Dashboard() {
       <nav className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 py-3 flex items-center justify-between">
             <div className="flex items-center gap-4">
-              <h1 className="text-xl font-bold text-blue-600">MeuNegócioPro</h1>
+              <h1 className="text-xl font-bold text-blue-600">CrediFácil</h1>
             <span className="text-sm text-gray-500">
               {user?.name} {user?.plan === 'paid' ? '⭐ Premium' : ''}
             </span>
